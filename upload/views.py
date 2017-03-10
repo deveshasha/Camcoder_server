@@ -33,14 +33,14 @@ def handle_upload(request):
 
         global FILENAME
         FILENAME = filename.replace(".tiff","")
-        print FILENAME
+        #print FILENAME
 
         output_filename = 'code_'
         output_filename += filename.replace(".tiff","")
         output_path += output_filename
 
         command = 'tesseract '+destfile_url+'preprocessed_'+ filename +' '+ output_path + ' -l eng'
-        print command
+        #print command
         os.system(command)
         
         output_path += '.txt'
@@ -177,15 +177,30 @@ def preprocess(srcfile_url, destfile_url, filename):
 @csrf_exempt
 def run_code(request):
 	if request.method == 'POST':
+		media_exe_path = os.path.join(BASE_DIR,'media/exe/')
+
+		c_file = open(media_exe_path + FILENAME + '.c','w+')
 		code = request.POST['code']
-		media_path = os.path.join(BASE_DIR,'media/exe/')
-		c_file = open(media_path + FILENAME + '.c','w+')
 		c_file.write(code)
 		c_file.close()
-		# fs = FileSystemStorage(os.path.join(BASE_DIR,'media/exe'),'/media/exe/')
-		# fs.save(c_file.name,c_file)
+		#print media_exe_path
+		#print FILENAME
 
-	return HttpResponse("JUST ANOTHER RESPONSE")
+		output_text_file = media_exe_path + FILENAME + '.txt'
+        #NOT WORKING
+		gcc_compile_command = 'gcc -o ' + media_exe_path + FILENAME + ' ' + media_exe_path + FILENAME + '.c'
+		#print gcc_compile_command
+		os.system(gcc_compile_command)
+
+		gcc_run_command = media_exe_path + FILENAME + ' > ' + output_text_file
+		#print gcc_run_command
+		os.system(gcc_run_command)
+
+		fs2 = FileSystemStorage()
+        text_file = fs2.open(output_text_file)
+        text = text_file.read()
+
+	return HttpResponse(text)
 
 def handle_uploaded_file(request):
 	return HttpResponse("handle_iplaooodde file")
