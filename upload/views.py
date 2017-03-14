@@ -3,6 +3,7 @@ import sys
 import re
 import cv2
 import numpy as np
+import math
 import json
 import subprocess
 from difflib import SequenceMatcher
@@ -105,20 +106,141 @@ def preprocess_text(source):
 	
 
 def preprocess_image(srcfile_url, destfile_url, filename):
+	
+	####### canny2.py starts #######
 	#Read image
-	image = cv2.imread(srcfile_url)
+	img = cv2.imread(srcfile_url)
+	gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+	(thresh, img_thresh) = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+	# blur = cv2.GaussianBlur(img_thresh,(15,15),0)
+	im2, contours, hierarchy = cv2.findContours(img_thresh,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+
+	# Find largest contour
+	index = 0
+	cnt = contours[0]
+	max_perimeter = cv2.arcLength(cnt,True)
+
+	for i in range(1,len(contours)):
+		cnt = contours[i]
+		perimeter = cv2.arcLength(cnt,True)
+		if perimeter > max_perimeter:
+			max_perimeter = perimeter
+			index = i
+
+	# cont_img = cv2.drawContours(img, contours, index, (0,255,0), 2)
+	# cv2.imwrite('cont_img.jpg',cont_img)
+
+	# Minimum bounding rect
+	cnt = contours[index]
+	rect = cv2.minAreaRect(cnt)
+	box = cv2.boxPoints(rect)
+	box = np.int0(box)
+
+	# Non-minimum bounding rect
+	x,y,w,h = cv2.boundingRect(cnt)
+	# cv2.rectangle(img,(x,y),(x+w,y+h),(0,255,0),2)
+
+	# sides of Non-min bounding rect
+	xleft = x
+	yleft = y + h
+
+	xright = x + w
+	yright = y + h
+
+	# points are 1234 clockwise from bottom most of minboundrect
+	x1 = box[0][0]
+	y1 = box[0][1]
+
+	x2 = box[1][0]
+	y2 = box[1][1]
+
+	x3 = box[2][0]
+	y3 = box[2][1]
+
+	x4 = box[3][0]
+	y4 = box[3][1]
+
+	# Find dist of minrect from boundingrect
+	ldist = math.sqrt((xleft - x1)**2 + (yleft - y1)**2)
+	rdist = math.sqrt((xright - x1)**2 + (yright - y1)**2)  
+
+	"""
+
+	Closer to left -> clockwise
+	Closer to right -> anticlock
+
+	"""
+
+	# Point closer to left
+	if ldist < rdist:
+		angle = abs(np.arctan2(y4 - y1, x4 - x1) * 180.0 / np.pi)
+		clockwise = True
+	else:
+		angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi)
+		clockwise = False
+		angle = 180 - angle
+
+	# length and breadth(width) of minboundrect
+	rectL = math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+	rectW = math.sqrt((x1 - x4)**2 + (y1 - y4)**2)
+
+	if rectW > rectL:
+		rectL,rectW = rectW,rectL
+
+	# img_box = cv2.drawContours(img,[box],0,(0,0,255),2)
+	# cv2.imwrite('img_box.jpg',img_box)
+
+	if angle != 0:
+		# Rotating image accdn to angle
+		(ht, wd) = img_thresh.shape[:2]
+		(cX, cY) = ((x1 + x3) / 2 , (y1 + y3) / 2)
+		if clockwise:
+			M = cv2.getRotationMatrix2D((cX, cY), -angle , 1.0)
+		else:
+			M = cv2.getRotationMatrix2D((cX, cY), angle , 1.0)
+
+		#img_rot = cv2.warpAffine(img, M, (wd, ht),borderValue=(255,255,255))
+		img_rot = cv2.warpAffine(img, M, (wd, ht))
+
+		# cv2.imwrite('rotated.jpg',img_rot)
+
+
+		# Cropping rotated image by numpy slicing
+		rowstart = cY - (int)(rectL / 2)
+		rowstart += 5
+
+		rowend = cY + (int)(rectL / 2)
+		rowend -= 5
+
+		colstart = cX - (int)(rectW / 2)
+		colstart += 5
+
+		colend = cX + (int)(rectW / 2)
+		colend -= 5
+
+		img_rot = img_rot[rowstart:rowend , colstart:colend]
+	else:
+		img_rot = img
+
+	image = img_rot
+	
+	#cv2.imwrite('rotated_cropped.jpg',img_rot)
+
+	####### canny2.py ends #######
+
+	####### hello.py starts #######
 
 	#Resize accdn to calculated ratio
-	ratio = 720.0 / image.shape[0]
-	dim = (int(image.shape[1] * ratio) , 720)
+	# ratio = 720.0 / image.shape[0]
+	# dim = (int(image.shape[1] * ratio) , 720)
 
-	# perform the actual resizing of the image
-	resized = cv2.resize(image, dim, interpolation = cv2.INTER_CUBIC)
-	image_height = image.shape[0]
-	image_width = image.shape[1]
+	# # perform the actual resizing of the image
+	# resized = cv2.resize(image, dim, interpolation = cv2.INTER_CUBIC)
+	# image_height = image.shape[0]
+	# image_width = image.shape[1]
 
 	#convert to grayscale
-	img_gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+	img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 	img_gray = cv2.bitwise_not(img_gray)
 	#cv2.imwrite('1_img_gray.jpg',img_gray)
 
@@ -160,7 +282,7 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 	#cv2.imwrite('5_blob_removed.jpg',img_thresh)
 
 	#Find houghlines in image
-	lines = cv2.HoughLines(img_thresh,1,np.pi/180,275)
+	#lines = cv2.HoughLines(img_thresh,1,np.pi/180,275)
 
 	######################################################
 	# for line in lines:								
@@ -178,47 +300,47 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 	# cv2.imwrite('houghlines.jpg',img_thresh)
 	######################################################
 
-	if lines is not None:
-		angles_sum = 0
-		for line in lines:
-			rho, theta = line[0]
-			angles_sum += theta
+	# if lines is not None:
+	# 	angles_sum = 0
+	# 	for line in lines:
+	# 		rho, theta = line[0]
+	# 		angles_sum += theta
 
-		avg_angle = angles_sum/len(lines)
-		avg_angle = avg_angle*180/np.pi
-		angle = 90 - avg_angle
-	else:
-		angle = 0
+	# 	avg_angle = angles_sum/len(lines)
+	# 	avg_angle = avg_angle*180/np.pi
+	# 	angle = 90 - avg_angle
+	# else:
+	# 	angle = 0
 	##############  CREDITS : Adrian Rosebrock from pyimagesearch.com  ######################
 
-	(h, w) = img_thresh.shape[:2]
-	(cX, cY) = (w // 2, h // 2)
+	# (h, w) = img_thresh.shape[:2]
+	# (cX, cY) = (w // 2, h // 2)
 
-	# grab the rotation matrix (applying the negative of the
-	# angle to rotate clockwise), then grab the sine and cosine
-	# (i.e., the rotation components of the matrix)
-	M = cv2.getRotationMatrix2D((cX, cY), -angle, 1.0)
-	cos = np.abs(M[0, 0])
-	sin = np.abs(M[0, 1])
+	# # grab the rotation matrix (applying the negative of the
+	# # angle to rotate clockwise), then grab the sine and cosine
+	# # (i.e., the rotation components of the matrix)
+	# M = cv2.getRotationMatrix2D((cX, cY), -angle, 1.0)
+	# cos = np.abs(M[0, 0])
+	# sin = np.abs(M[0, 1])
 
-	# compute the new bounding dimensions of the image
-	nW = int((h * sin) + (w * cos))
-	nH = int((h * cos) + (w * sin))
+	# # compute the new bounding dimensions of the image
+	# nW = int((h * sin) + (w * cos))
+	# nH = int((h * cos) + (w * sin))
 
-	# adjust the rotation matrix to take into account translation
-	M[0, 2] += (nW / 2) - cX
-	M[1, 2] += (nH / 2) - cY
+	# # adjust the rotation matrix to take into account translation
+	# M[0, 2] += (nW / 2) - cX
+	# M[1, 2] += (nH / 2) - cY
 
-	# perform the actual rotation and return the image
-	img_thresh = cv2.warpAffine(img_thresh, M, (nW, nH))
+	# # perform the actual rotation and return the image
+	# img_thresh = cv2.warpAffine(img_thresh, M, (nW, nH))
 
 	#########################################################################################
 
-	#Resize again after rotation
-	ratio = 720.0 / img_thresh.shape[0]
-	dim = (int(img_thresh.shape[1] * ratio) , 720)
-	# perform the actual resizing of the image
-	img_thresh = cv2.resize(img_thresh, dim, interpolation = cv2.INTER_CUBIC)
+	# #Resize again after rotation
+	# ratio = 720.0 / img_thresh.shape[0]
+	# dim = (int(img_thresh.shape[1] * ratio) , 720)
+	# # perform the actual resizing of the image
+	# img_thresh = cv2.resize(img_thresh, dim, interpolation = cv2.INTER_CUBIC)
 
 	#cv2.imwrite('6_final_inverted.jpg',img_thresh)
 	img_thresh = cv2.bitwise_not(img_thresh)
