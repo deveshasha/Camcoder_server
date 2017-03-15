@@ -107,13 +107,12 @@ def preprocess_text(source):
 
 def preprocess_image(srcfile_url, destfile_url, filename):
 	
-	####### canny2.py starts #######
 	#Read image
 	img = cv2.imread(srcfile_url)
 	gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-	(thresh, img_thresh) = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+	(thresh, canny_img_thresh) = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 	# blur = cv2.GaussianBlur(img_thresh,(15,15),0)
-	im2, contours, hierarchy = cv2.findContours(img_thresh,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+	im2, contours, hierarchy = cv2.findContours(canny_img_thresh,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 
 	# Find largest contour
 	index = 0
@@ -171,14 +170,15 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 
 	"""
 
+	canny_angle = 0
 	# Point closer to left
 	if ldist < rdist:
-		angle = abs(np.arctan2(y4 - y1, x4 - x1) * 180.0 / np.pi)
+		canny_angle = abs(np.arctan2(y4 - y1, x4 - x1) * 180.0 / np.pi)
 		clockwise = True
 	else:
-		angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi)
+		canny_angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi)
 		clockwise = False
-		angle = 180 - angle
+		canny_angle = 180 - canny_angle
 
 	# length and breadth(width) of minboundrect
 	rectL = math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
@@ -190,14 +190,14 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 	# img_box = cv2.drawContours(img,[box],0,(0,0,255),2)
 	# cv2.imwrite('img_box.jpg',img_box)
 
-	if angle != 0:
+	if canny_angle != 0:
 		# Rotating image accdn to angle
-		(ht, wd) = img_thresh.shape[:2]
+		(ht, wd) = img.shape[:2]
 		(cX, cY) = ((x1 + x3) / 2 , (y1 + y3) / 2)
 		if clockwise:
-			M = cv2.getRotationMatrix2D((cX, cY), -angle , 1.0)
+			M = cv2.getRotationMatrix2D((cX, cY), -canny_angle , 1.0)
 		else:
-			M = cv2.getRotationMatrix2D((cX, cY), angle , 1.0)
+			M = cv2.getRotationMatrix2D((cX, cY), canny_angle , 1.0)
 
 		#img_rot = cv2.warpAffine(img, M, (wd, ht),borderValue=(255,255,255))
 		img_rot = cv2.warpAffine(img, M, (wd, ht))
@@ -218,24 +218,21 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 		colend = cX + (int)(rectW / 2)
 		colend -= 5
 
-		img_rot = img_rot[rowstart:rowend , colstart:colend]
+		canny_final_img = img_rot[rowstart:rowend , colstart:colend]
 	else:
-		img_rot = img
-
-	image = img_rot
-	
-	#cv2.imwrite('rotated_cropped.jpg',img_rot)
+		canny_final_img = img
 
 	####### canny2.py ends #######
 
 	####### hello.py starts #######
+	image = canny_final_img
 
-	#Resize accdn to calculated ratio
+	# #Resize accdn to calculated ratio
 	# ratio = 720.0 / image.shape[0]
 	# dim = (int(image.shape[1] * ratio) , 720)
 
 	# # perform the actual resizing of the image
-	# resized = cv2.resize(image, dim, interpolation = cv2.INTER_CUBIC)
+	# image = cv2.resize(image, dim, interpolation = cv2.INTER_CUBIC)
 	# image_height = image.shape[0]
 	# image_width = image.shape[1]
 
@@ -249,7 +246,7 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 	#cv2.imwrite('cmpl.jpg',im_complement)
 
 	#calculate background image
-	se = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(25,25))
+	se = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(20,20))
 	img_bg = cv2.erode(img_gray,se)
 	#cv2.imwrite('2_img_bg.jpg',img_bg)
 
@@ -269,7 +266,7 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 	stats = output[2]
 
 	for i in range(1,num_labels):
-		if(stats[i,cv2.CC_STAT_AREA] < 10):
+		if(stats[i,cv2.CC_STAT_AREA] < 7):
 			left = stats[i,cv2.CC_STAT_LEFT]
 			width = stats[i,cv2.CC_STAT_WIDTH]
 			top = stats[i,cv2.CC_STAT_TOP]
@@ -281,62 +278,86 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 
 	#cv2.imwrite('5_blob_removed.jpg',img_thresh)
 
+	######################################################
 	#Find houghlines in image
-	#lines = cv2.HoughLines(img_thresh,1,np.pi/180,275)
+	lines = cv2.HoughLines(img_thresh,1,np.pi/180,200)
 
-	######################################################
-	# for line in lines:								
-	# 	rho, theta = line[0]								
-	# 	a = np.cos(theta)									
-	# 	b = np.sin(theta)
-	# 	x0 = a*rho
-	# 	y0 = b*rho
-	# 	x1 = int(x0 + 1200*(-b))
-	# 	y1 = int(y0 + 1200*(a))
-	# 	x2 = int(x0 - 1200*(-b))
-	# 	y2 = int(y0 - 1200*(a))
-	# 	cv2.line(img_thresh,(x1,y1),(x2,y2),(255,255,0),2)
+	if lines is not None:
+		angle_sum = 0
+		line_count = 0
 
-	# cv2.imwrite('houghlines.jpg',img_thresh)
-	######################################################
+		for line in lines:								
+			rho, theta = line[0]								
+			#########################
+			# a = np.cos(theta)									
+			# b = np.sin(theta)
+			# x0 = a*rho
+			# y0 = b*rho
+			# x1 = int(x0 + 2000*(-b))
+			# y1 = int(y0 + 2000*(a))
+			# x2 = int(x0 - 2000*(-b))
+			# y2 = int(y0 - 2000*(a))
+			##########################
 
-	# if lines is not None:
-	# 	angles_sum = 0
-	# 	for line in lines:
-	# 		rho, theta = line[0]
-	# 		angles_sum += theta
+			line_angle = theta * 180 / np.pi
+			
+			if line_angle >= 70 and line_angle <= 110:
+				#print line_angle
+				#cv2.line(image,(x1,y1),(x2,y2),(255,255,0),2)
+				angle_sum += line_angle
+				line_count += 1
 
-	# 	avg_angle = angles_sum/len(lines)
-	# 	avg_angle = avg_angle*180/np.pi
-	# 	angle = 90 - avg_angle
-	# else:
-	# 	angle = 0
+		if line_count != 0:
+			hough_angle = angle_sum / line_count
+
+		# if negative slope rotate anticlock
+		if hough_angle >= 90:
+			hough_angle = hough_angle - 90
+			hough_clockwise = False
+
+		# if positive slope rotate clockwise
+		elif hough_angle < 90:
+			hough_angle = 90 - hough_angle
+			hough_clockwise = True
+
+	else:
+		hough_angle = 0
+		hough_clockwise = False
+
+	#cv2.imwrite('houghlines.jpg',image)
+	#print hough_angle
+	####################################################
+
 	##############  CREDITS : Adrian Rosebrock from pyimagesearch.com  ######################
+	# Rotate accdn to hough_angle
+	(hh, hw) = img_thresh.shape[:2]
+	(cX, cY) = (hw // 2, hh // 2)
 
-	# (h, w) = img_thresh.shape[:2]
-	# (cX, cY) = (w // 2, h // 2)
+	# grab the rotation matrix (applying the negative of the
+	# angle to rotate clockwise), then grab the sine and cosine
+	# (i.e., the rotation components of the matrix)
+	if hough_clockwise:
+		M = cv2.getRotationMatrix2D((cX, cY), -hough_angle , 1.0)
+	else:
+		M = cv2.getRotationMatrix2D((cX, cY), hough_angle , 1.0)
 
-	# # grab the rotation matrix (applying the negative of the
-	# # angle to rotate clockwise), then grab the sine and cosine
-	# # (i.e., the rotation components of the matrix)
-	# M = cv2.getRotationMatrix2D((cX, cY), -angle, 1.0)
-	# cos = np.abs(M[0, 0])
-	# sin = np.abs(M[0, 1])
+	cos = np.abs(M[0, 0])
+	sin = np.abs(M[0, 1])
 
-	# # compute the new bounding dimensions of the image
-	# nW = int((h * sin) + (w * cos))
-	# nH = int((h * cos) + (w * sin))
+	# compute the new bounding dimensions of the image
+	nW = int((hh * sin) + (hw * cos))
+	nH = int((hh * cos) + (hw * sin))
 
-	# # adjust the rotation matrix to take into account translation
-	# M[0, 2] += (nW / 2) - cX
-	# M[1, 2] += (nH / 2) - cY
+	# adjust the rotation matrix to take into account translation
+	M[0, 2] += (nW / 2) - cX
+	M[1, 2] += (nH / 2) - cY
 
-	# # perform the actual rotation and return the image
-	# img_thresh = cv2.warpAffine(img_thresh, M, (nW, nH))
+	# perform the actual rotation and return the image
+	img_thresh = cv2.warpAffine(img_thresh, M, (nW, nH))
 
 	#########################################################################################
 
-	# #Resize again after rotation
+	#Resize again after rotation
 	# ratio = 720.0 / img_thresh.shape[0]
 	# dim = (int(img_thresh.shape[1] * ratio) , 720)
 	# # perform the actual resizing of the image
