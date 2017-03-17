@@ -80,7 +80,7 @@ def preprocess_text(source):
 
 	#fix missing semicolons
 
-	sequences = ["#include <stdio.h>", "#include <string.h>", "#include <stdlib.h>"]
+	sequences = ["#include <stdio.h>", "#include <string.h>", "#include <stdlib.h>","int","main() {","void","return 0;"]
 	
 	# Given a line, find best possible match, given a list of valid sequences
 	
@@ -99,6 +99,13 @@ def preprocess_text(source):
 			max_ratio = max(sequences_ratios)
 			if max_ratio > 0.6:
 				source[line] = sequences[sequences_ratios.index(max_ratio)]
+
+		p = re.compile("^.*\(") # Match beginning of line for *(
+		match = p.match(source[line])
+		if match is not None:
+			s = SequenceMatcher(lambda x: x == " ", match.group(), "printf(")
+			if s.ratio() > 0.6:
+				source[line] = source[line].replace(match.group(), "printf(")
 
 
 	text = '\n'.join(source)
@@ -357,11 +364,20 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 
 	#########################################################################################
 
+	img_threshH = img_thresh.shape[0]
+	img_threshW = img_thresh.shape[1]
+
+	# Landscape orientation
+	if img_threshW > img_threshH:
 	#Resize again after rotation
-	# ratio = 720.0 / img_thresh.shape[0]
-	# dim = (int(img_thresh.shape[1] * ratio) , 720)
-	# # perform the actual resizing of the image
-	# img_thresh = cv2.resize(img_thresh, dim, interpolation = cv2.INTER_CUBIC)
+		ratio = 720.0 / img_threshH
+		dim = (int(img_threshW * ratio) , 720)
+		# perform the actual resizing of the image
+		img_thresh = cv2.resize(img_thresh, dim, interpolation = cv2.INTER_CUBIC)
+	else:
+		ratio = 720.0 / img_threshW
+		dim = ( 720 , int(img_threshH * ratio))
+		img_thresh = cv2.resize(img_thresh, dim, interpolation = cv2.INTER_CUBIC)
 
 	#cv2.imwrite('6_final_inverted.jpg',img_thresh)
 	img_thresh = cv2.bitwise_not(img_thresh)
@@ -372,6 +388,8 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 @csrf_exempt
 def run_code(request):
 	if request.method == 'POST':
+		global text_file_error
+		text_file_error = ''
 		media_exe_path = os.path.join(BASE_DIR,'media/exe/')
 		program_filename = media_exe_path + FILENAME + '.c'
 		program_filename_after_compiler_feedback = media_exe_path + FILENAME + 'feed.c'
@@ -393,20 +411,26 @@ def run_code(request):
 			print "Compiler errors. Fixing errors..."
 			print "----------------------------"
 			error = e.output
+			#print error
 			compiler_feedback(error,program_filename,program_filename_after_compiler_feedback)
 
 			#Compile your program
-
+			c_code_path = media_exe_path + FILENAME + 'feed.c'
 			gcc_compile_command = 'gcc -o ' + media_exe_path + FILENAME + 'feed ' + media_exe_path + FILENAME + 'feed.c'
 			#print gcc_compile_command
 			os.system(gcc_compile_command)
-
+			if flag is not 1:
+				print 'corrected'
 			#Run your program
-			gcc_run_command = media_exe_path + FILENAME + 'feed' + ' > ' + output_text_file
-			print gcc_run_command
-			os.system(gcc_run_command)
-
-
+				gcc_run_command = media_exe_path + FILENAME + 'feed' + ' > ' + output_text_file
+				#print gcc_run_command
+				os.system(gcc_run_command)
+			else:
+				print 'inside else'
+				#print c_code_path
+				text_file_error = open(c_code_path,'r').read()
+				print 'returning'
+        		return HttpResponse(text_file_error)
 		else:
 			print "Compiled Successfully."
 			print "----------------------------"
@@ -417,9 +441,12 @@ def run_code(request):
 
 			#Run your program
 			gcc_run_command = media_exe_path + FILENAME + ' > ' + output_text_file
-			print gcc_run_command
+			#print gcc_run_command
 			os.system(gcc_run_command)
 
+
+
+		print 'outputcoming'
 		fs2 = FileSystemStorage()
         text_file = fs2.open(output_text_file)
         text = text_file.read()
@@ -480,7 +507,7 @@ def run_code(request):
 
 def compiler_feedback(error,program_source,output_source):
 	print 'compiler_feedback'
-
+	global flag
 	valid_errors = ["expected declaration or statement at end of input",
 									"undeclared (first use in this function)",
 									"expected '}' before 'else'"]
@@ -494,10 +521,11 @@ def compiler_feedback(error,program_source,output_source):
 
 	gcc_output = error.splitlines()
 	#print gcc_output
+	#print gcc_output
 	#print gcc_output[1].splitlines()
 	#print source
 	#Given a gcc output line, identify if it contains an error message
-
+	error_queue = ["Errors are: "]
 	for line_num in xrange(len(gcc_output)):
 
 		gcc_line = re.search("error: ",gcc_output[line_num])
@@ -505,28 +533,37 @@ def compiler_feedback(error,program_source,output_source):
 
 		# Determine what the error message is
 			error_message = gcc_output[line_num][gcc_line.end():]
+			error_queue.append(error_message)
 	        #error_line = int(gcc_line.group(2)) - 1; # gcc lines are 1-indexed
 			# Case 0: Missing } after function or loop. Solution: Add }
 			get_line_array = gcc_output[line_num].split(":")
 			error_line = int(get_line_array[2]) - 1
-			if valid_errors[0] in error_message and fixed[0] is False:
-				source.insert(error_line, "}")
-				fixed[0] = True;
-			# Case 1: Undeclared variable. Solution: make it an int
-			# Move semicolon fix code here?
-			if valid_errors[1] in error_message and fixed[1] is False:
-				source[error_line] = "int " + source[error_line]
-				fixed[1] = True;
-			# Case 2: Missing } before else. Solution: Add one. TODO: Merge w/ Case 1
-			if valid_errors[2] in error_message and fixed[2] is False:
-				source.insert(error_line, "}");
-				fixed[2] = True;
+
+			if valid_errors[0] not in error_message and valid_errors[1] not in error_message and valid_errors[2] not in error_message:
+				flag = 1
+			else:
+				if valid_errors[0] in error_message and fixed[0] is False:
+					print 'fixed'
+					source.insert(error_line, "}")
+					fixed[0] = True;
+				# Case 1: Undeclared variable. Solution: make it an int
+				# Move semicolon fix code here?
+				if valid_errors[1] in error_message and fixed[1] is False:
+					source[error_line] = "int " + source[error_line]
+					fixed[1] = True;
+				# Case 2: Missing } before else. Solution: Add one. TODO: Merge w/ Case 1
+				if valid_errors[2] in error_message and fixed[2] is False:
+					source.insert(error_line, "}");
+					fixed[2] = True;
+				flag = 0
 					
 		
 		source.append("\n")
-    
-    
-	final_answer = '\n'.join(source)
+
+	if flag is 1:
+		final_answer = '\n'.join(error_queue)
+	else:
+		final_answer = '\n'.join(source)
 
 	#Write fixed source file
 	with open(output_source, 'wb+') as f:
