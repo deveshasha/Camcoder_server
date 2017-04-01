@@ -45,7 +45,7 @@ def handle_upload(request):
         output_filename += filename.replace(".tiff","")
         output_path += output_filename
 
-        command = 'tesseract '+destfile_url+'preprocessed_'+ filename +' '+ output_path + ' -l eng'
+        command = 'tesseract '+destfile_url+'preprocessed_'+ filename +' '+ output_path + ' -l eng_com'
         #print command
         os.system(command)
         
@@ -72,7 +72,7 @@ def preprocess_text(source):
 	#print source
 	p = re.compile( """
 					.*?									# Consume text
-					^(?!for|if|while)		# Does not contain for, if, while
+					^(?!for|if|while|main)		# Does not contain for, if, while
 					.*?									# Consume text
 					[^;>{}]							# Does not end in semicolon or brackets
 					\s*$								# Ends with optional whitespace
@@ -80,7 +80,7 @@ def preprocess_text(source):
 
 	#fix missing semicolons
 
-	sequences = ["#include <stdio.h>", "#include <string.h>", "#include <stdlib.h>","int","main() {","void","return 0;"]
+	sequences = ["#include <stdio.h>", "#include <string.h>", "#include <stdlib.h>","int ","main() {","void main(){","return 0;","printf(","int main(){"]
 	
 	# Given a line, find best possible match, given a list of valid sequences
 	
@@ -273,7 +273,7 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 	stats = output[2]
 
 	for i in range(1,num_labels):
-		if(stats[i,cv2.CC_STAT_AREA] < 7):
+		if(stats[i,cv2.CC_STAT_AREA] < 10):
 			left = stats[i,cv2.CC_STAT_LEFT]
 			width = stats[i,cv2.CC_STAT_WIDTH]
 			top = stats[i,cv2.CC_STAT_TOP]
@@ -399,7 +399,8 @@ def run_code(request):
 		c_file.close()
 		#print media_exe_path
 		#print FILENAME
-
+		text_answer = ''
+		text_file_error_flag = 0
 		output_text_file = media_exe_path + FILENAME + '.txt'
         #NOT WORKING
 		#gcc_compile_command = 'gcc -o ' + media_exe_path + FILENAME + ' ' + media_exe_path + FILENAME + '.c'
@@ -425,12 +426,14 @@ def run_code(request):
 				gcc_run_command = media_exe_path + FILENAME + 'feed' + ' > ' + output_text_file
 				#print gcc_run_command
 				os.system(gcc_run_command)
+				text_file_error_flag = 0
 			else:
 				print 'inside else'
 				#print c_code_path
+				text_file_error_flag = 1
 				text_file_error = open(c_code_path,'r').read()
 				print 'returning'
-        		return HttpResponse(text_file_error)
+        		#return HttpResponse(text_file_error)
 		else:
 			print "Compiled Successfully."
 			print "----------------------------"
@@ -444,66 +447,20 @@ def run_code(request):
 			#print gcc_run_command
 			os.system(gcc_run_command)
 
+		finally:
+			print 'outputcoming'
+			print text_answer
+			if text_file_error_flag is 1:
+				return HttpResponse(text_file_error)
+			else:
+				fs2 = FileSystemStorage()
+				print output_text_file
+				text_file = fs2.open(output_text_file)
+				print text_file
+				text_answer = text_file.read()
+				return HttpResponse(text_answer)
 
-
-		print 'outputcoming'
-		fs2 = FileSystemStorage()
-        text_file = fs2.open(output_text_file)
-        text = text_file.read()
-
-	return HttpResponse(text)
-
-
-# def spellcheck(input_path,output_path):
-# 	print 'inside spellcheck'
-# 	frequent_words = ['#include', '<stdio.h>', 'int', 'main()', 'char', 'char*' ,'return',\
-# 				  'printf',  'string', 'main'];
-
-# 	delimiters = ',|;| |\n'
-# 	print input_path
-# 	print output_path
-# 	before = open(input_path)
-# 	after = open(output_path, 'w+')
 	
-# 	for line in before.readlines():
-# 		line = line.replace('\r', '')
-# 		line = line.replace('\x1c', '\"')
-# 		words = re.split(delimiters, line)
-# 		words = filter(None, words);
-
-# 		for word in words:
-# 			if (len(word) < 11):
-# 				if (len(word) < 7):
-# 					thresh = 1
-# 				else:
-# 					thresh = 2
-# 				for candidate in frequent_words:	
-# 					ed = levenshtein(word, candidate)
-# 					if (ed <= thresh and ed > 0):
-# 						line = line.replace(word, candidate)
-# 						print line
-# 		after.write(line)
-
-# def levenshtein(s1, s2):
-# 	print 'inside levenshtein'
-# 	if len(s1) < len(s2):
-# 		return levenshtein(s2, s1)
- 
-#     # len(s1) >= len(s2)
-# 	if len(s2) == 0:
-# 		return len(s1)
- 
-# 	previous_row = xrange(len(s2) + 1)
-# 	for i, c1 in enumerate(s1):
-# 		current_row = [i + 1]
-#         for j, c2 in enumerate(s2):
-#             insertions = previous_row[j + 1] + 1 # j+1 instead of j since previous_row and current_row are one character longer
-#             deletions = current_row[j] + 1       # than s2
-#             substitutions = previous_row[j] + (c1 != c2)
-#             current_row.append(min(insertions, deletions, substitutions))
-#         previous_row = current_row
- 
-# 	return previous_row[-1]
 
 def compiler_feedback(error,program_source,output_source):
 	print 'compiler_feedback'
@@ -559,7 +516,7 @@ def compiler_feedback(error,program_source,output_source):
 					
 		
 		source.append("\n")
-
+	print error_queue
 	if flag is 1:
 		final_answer = '\n'.join(error_queue)
 	else:
