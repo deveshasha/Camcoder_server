@@ -16,8 +16,6 @@ from django.views.decorators.csrf import csrf_exempt
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Create your views here.
-
 
 def home(request):
 	return HttpResponse("HOME")
@@ -29,7 +27,6 @@ def handle_upload(request):
         fs = FileSystemStorage(os.path.join(BASE_DIR,'media/images'),'/media/images/')
         filename = fs.save(myfile.name, myfile)
         uploaded_file_url = fs.url(filename)
-        # print fs
         print filename
         
         srcfile_url = BASE_DIR + uploaded_file_url
@@ -39,7 +36,7 @@ def handle_upload(request):
         #output_path_after_spellcheck = os.path.join(BASE_DIR,'media/output/')
         global FILENAME
         FILENAME = filename.replace(".tiff","")
-        #print FILENAME
+        
 
         output_filename = 'code_'
         output_filename += filename.replace(".tiff","")
@@ -71,11 +68,11 @@ def handle_upload(request):
 def preprocess_text(source):
 	#print source
 	p = re.compile( """
-					.*?									# Consume text
-					^(?!for|if|while|main)		# Does not contain for, if, while
-					.*?									# Consume text
-					[^;>{}]							# Does not end in semicolon or brackets
-					\s*$								# Ends with optional whitespace
+					.*?					# Consume text
+					^(?!for|if|while|main)			# Does not contain for, if, while
+					.*?					# Consume text
+					[^;>{}]					# Does not end in semicolon or brackets
+					\s*$					# Ends with optional whitespace
 					""", re.VERBOSE)
 
 	#fix missing semicolons
@@ -83,8 +80,6 @@ def preprocess_text(source):
 	sequences = ["#include <stdio.h>", "#include <string.h>", "#include <stdlib.h>","int ","main() {","void main(){","return 0;","printf(","int main(){"]
 	
 	# Given a line, find best possible match, given a list of valid sequences
-	
-
 	for line in xrange(len(source)):
 		if re.search(p, source[line]) is not None:
 			source[line] = source[line] + ";"
@@ -113,7 +108,6 @@ def preprocess_text(source):
 	
 
 def preprocess_image(srcfile_url, destfile_url, filename):
-	
 	#Read image
 	img = cv2.imread(srcfile_url)
 	gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -229,9 +223,6 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 	else:
 		canny_final_img = img
 
-	####### canny2.py ends #######
-
-	####### hello.py starts #######
 	image = canny_final_img
 
 	# #Resize accdn to calculated ratio
@@ -248,9 +239,6 @@ def preprocess_image(srcfile_url, destfile_url, filename):
 	img_gray = cv2.bitwise_not(img_gray)
 	#cv2.imwrite('1_img_gray.jpg',img_gray)
 
-	#complementing image 2 diff methods
-	#im_complement = (255-img_gray)
-	#cv2.imwrite('cmpl.jpg',im_complement)
 
 	#calculate background image
 	se = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(20,20))
@@ -402,7 +390,6 @@ def run_code(request):
 		text_answer = ''
 		text_file_error_flag = 0
 		output_text_file = media_exe_path + FILENAME + '.txt'
-        #NOT WORKING
 		#gcc_compile_command = 'gcc -o ' + media_exe_path + FILENAME + ' ' + media_exe_path + FILENAME + '.c'
 		#print gcc_compile_command
 		#os.system(gcc_compile_command)
